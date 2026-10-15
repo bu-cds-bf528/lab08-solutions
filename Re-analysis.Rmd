@@ -238,12 +238,16 @@ plot_df <- counts(dds_cov, normalized = TRUE)[gene_of_interest, ] %>%
   enframe(name = "sample", value = "norm_count") %>%
   left_join(as.data.frame(colData(dds_cov)), by = "sample")
 
-# View 1: what the naive model "sees" -- genotype only
-ggplot(plot_df, aes(x = condition, y = norm_count)) +
-  geom_boxplot(outlier.shape = NA, fill = "grey90") +
-  geom_point(size = 3) +
-  labs(title = gene_of_interest, subtitle = "Ignoring litter",
-       x = NULL, y = "Normalized counts")
+# View 1: one bar per mouse, grouped by litter, WT before KO within each litter
+plot_df <- plot_df %>% arrange(litter, condition) %>%
+  mutate(sample = factor(sample, levels = sample))
+
+ggplot(plot_df, aes(x = sample, y = norm_count, fill = condition)) +
+  geom_col() +
+  facet_wrap(~ litter, scales = "free_x") +
+  labs(title = gene_of_interest, subtitle = "One bar per mouse, split by litter",
+       x = NULL, y = "Normalized counts") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # View 2: the same points, colored by litter, with each litter's WT and KO means joined
 ggplot(plot_df, aes(x = condition, y = norm_count, color = litter)) +
@@ -253,8 +257,9 @@ ggplot(plot_df, aes(x = condition, y = norm_count, color = litter)) +
        x = NULL, y = "Normalized counts")
 ```
 
-**Q4.1** In View 1, do WT and KO look different? In View 2, what do the lines for
-each litter have in common? Why could the naive model not detect this gene?
+**Q4.1** In View 1, compare WT and KO *within* each litter, then compare the litters to
+each other. Which difference is larger? In View 2, what do the lines for each litter have
+in common? Why could the naive model not detect this gene?
 
 **Q4.2** Change `gene_of_interest` to two or three other genes from `gained` and
 re-run the plots. Is the pattern the same?
