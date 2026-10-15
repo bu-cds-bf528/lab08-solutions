@@ -24,9 +24,9 @@ By the end of this part you should be able to:
 In the first part of the lab, the `~ condition` model found very few (subjective)
 differentially expressed genes between KO and WT. After the experiment, the researcher
 learned one more piece of information that wasn't in the original sample sheet: 
-the 8 mice came from **three different litters**. Although this information is
-technically encoded in the numbers (the numbers close together were from the same
-litter as you see below)
+the 8 mice came from **three different litters**. This information was technically
+already hiding in the mouse IDs, since consecutive numbers come from the same
+litter.
 
 | mouse | litter |
 |-------|--------|
@@ -37,6 +37,9 @@ litter as you see below)
 Mice from the same litter share parents, a mother, a cage, and a birth date. That
 can make littermates' gene expression more similar to each other than to mice
 from other litters, regardless of genotype.
+
+We will re-visit a similar phenomenon later in the semester when we talk about
+single cell. 
 
 A **covariate** is a variable that isn't what you're testing but still affects your
 measurements. If you leave it out of the model, the variation it causes gets counted as
