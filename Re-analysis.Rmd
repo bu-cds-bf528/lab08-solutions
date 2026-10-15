@@ -282,6 +282,10 @@ delimited, `read_csv` for commas and `read_tsv` for tabs. You woudl then use a
 on the common column (gene_id). You will need to look at the function definition
 to handle the situation where your columns that hold the keys have different names. 
 
+You can practice here with the included file. Remember that this is species-specific,
+so this will only be valid for mice. 
+
+
 ## Generating a ranked list of genes by Log2FoldChange
 
 Once you have joined the gene names into your DE results table, you can use
