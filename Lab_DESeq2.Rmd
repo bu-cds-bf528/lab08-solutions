@@ -121,11 +121,8 @@ Console and run them once. The chunk is set not to run when you knit (`eval=FALS
 Installing can take several minutes. If R asks "Update all/some/none?", type `n` and
 press Enter.
 
-```{r install, eval=FALSE}
-# Run ONCE, only if library() below fails
-install.packages(c("tidyverse", "pheatmap", "RColorBrewer", "BiocManager"))
-BiocManager::install("DESeq2")
-```
+These packages below should already be installed by default on the SCC. 
+
 
 ```{r libraries}
 # Run every session
@@ -139,6 +136,11 @@ library(RColorBrewer)
 
 Most of the table work in this lab uses a handful of tidyverse functions. To practice,
 here is a small made-up table. `tibble()` builds a table one column at a time.
+
+The tidyverse set of functions were designed  to be intuitive, expressive, and 
+you should almost be able to read tidyverse code as plain text. You'll notice
+that most tidyverse functions are named as verbs that describe what it does, and
+you chain them together in the steps that you are performing on the data. 
 
 ```{r toy-table}
 genes <- tibble(
@@ -181,14 +183,6 @@ genes %>% mutate(count_per_kb = count / length)
 genes %>% arrange(desc(count))
 ```
 
-`group_by()` + `summarize()` compute a summary for each group:
-
-```{r toy-summarize}
-genes %>%
-  group_by(tissue) %>%
-  summarize(n_genes = n(), mean_count = mean(count))
-```
-
 Chain several steps together, and save the result with `<-`:
 
 ```{r toy-chain}
@@ -202,12 +196,6 @@ brain_top
 
 None of these functions change `genes` itself. Print `genes` again and you'll see it is
 unchanged. To keep a result, assign it to a name, as with `brain_top` above.
-
-**Try it:** write a pipe that keeps only liver genes with `count` above 4500.
-
-```{r toy-try}
-# TODO: your code here
-```
 
 ---
 
@@ -223,7 +211,8 @@ questions.
 
 The counts are in a **tab-separated** text file, which is a spreadsheet saved as plain text.
 `read_tsv()` reads it into a table. In R, a table is called a **data frame**. The tidyverse
-version of a data frame is called a **tibble**.
+version of a data frame is called a **tibble**, and the `read_tsv` function reads
+in this TSV as a tibble. 
 
 ```{r read-raw}
 # The file must be in the same folder as this .Rmd
@@ -272,6 +261,10 @@ There are two problems to fix:
 1. The first column is a leftover row number from the program that wrote the file. It
    isn't data.
 2. Every sample name ends in `_count`, which is not needed for further analysis.
+
+You should end up with a dataframe that has a column for the gene_id and a column
+for all 8 samples. The number of rows represents the number of genes in the
+experiment.
 
 ```{r clean}
 counts <- raw %>%
@@ -329,7 +322,7 @@ R draws plots with **ggplot**. A ggplot is built from layers joined with `+`:
 2. A `geom_...()` says what to draw: bars, points, lines, and so on.
 3. Optional extra layers change labels, colors, and themes.
 
-Here are the counts for one gene across all 8 samples:
+Here are the raw counts for one gene across all 8 samples:
 
 ```{r first-plot}
 counts_long %>%
@@ -351,8 +344,8 @@ describes the *columns* of the count matrix. We build it from the sample names.
 
 ```{r coldata}
 coldata <- tibble(sample = colnames(counts)[-1]) %>%   # all column names except gene_id
-  separate(sample, into = c("condition", "mouse"), remove = FALSE) %>%
-  mutate(condition = factor(condition, levels = c("WT", "KO")))
+  separate(sample, into = c("condition", "mouse"), remove = FALSE) %>% # separate splits the sample name on the _
+  mutate(condition = factor(condition, levels = c("WT", "KO"))) # we turn condition into a factor
 coldata
 ```
 
@@ -381,14 +374,22 @@ dds <- DESeqDataSetFromMatrix(countData = mat,
 dds
 ```
 
+Our design is `~condition` which instructs DESeq2 to model the gene counts as
+a function of a single experimental factor. In our case, this condition represents
+the difference between our wild-type and KO mice of interest. DESeq2 will fit
+a generalized linear model (GLM) to each gene, assuming its counts can be modeled
+by a negative binomial distribution. 
+ 
 ## 2.2 Filter low-count genes
 
 Genes with almost no reads carry no information and only add to the multiple-testing
-burden. `counts(dds)` returns the count matrix stored inside `dds`.
+burden. `counts(dds)` returns the count matrix stored inside `dds`. This filtering
+strategy comes directly from the DESeq2 vignette, but in the future, you likely
+want to come up with more elegant filtering strategies that also take into
+consideration the number of replicates in each condition. 
 
 ```{r filter}
-# TODO: keep genes with >= 10 counts in at least 4 samples
-# How many genes are left?
+
 keep <- rowSums(counts(dds) >= 10) >= 4
 dds <- dds[keep, ]
 nrow(dds)
@@ -398,16 +399,23 @@ nrow(dds)
 
 ## 2.3 PCA and sample distances
 
+Many machine learning methods including PCA, and clustering assume roughly
+constant variance across features. RNA-seq count data explicitly breaks this
+assumption as the variance scales with the mean. The DESeq2 variance stabilizing
+transformation (vst) is one possible method to stabilize the variance. 
+
 ```{r vst-pca}
+# This is directly from the DESeq2 vignette
+# Makes a PCA biplot colored by metadata from our samples
 vsd <- vst(dds, blind = TRUE)
-# TODO: plotPCA(vsd, intgroup = "condition")
 plotPCA(vsd, intgroup = "condition")
 ```
 
 ```{r dist-heatmap}
+# Also directly from the DEseq2 vignette
 sampleDists <- dist(t(assay(vsd)))
 sampleDistMatrix <- as.matrix(sampleDists)
-rownames(sampleDistMatrix) <- vsd$sample
+rownames(sampleDistMatrix) <- vsd$condition
 colnames(sampleDistMatrix) <- NULL
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
@@ -425,17 +433,17 @@ hypothesis for what is driving this structure.
 
 # Part 3: The initial analysis (`~ condition`)
 
-```{r deseq-naive}
+```{r deseq-basic}
 # This runs the DESeq2 method - normalization, testing of each gene with a GLM
 dds <- DESeq(dds)
 
 # This makes the results available in a data frame
-res_naive <- results(dds, name = "condition_KO_vs_WT")
+res_basic <- results(dds, name = "condition_KO_vs_WT")
 ```
 
 ```{r naive-tibble}
 # TODO: convert to tibble, arrange by padj
-res_tbl <- res_naive %>% as_tibble(rownames = "gene_id") %>% arrange(padj)
+res_tbl <- res_basic %>% as_tibble(rownames = "gene_id") %>% arrange(padj)
 res_tbl
 ```
 
@@ -449,22 +457,25 @@ res_tbl %>% filter(padj < 0.1)
 
 # Part 4: What might have gone wrong?
 
-You'll notice that we observe no genes that are differentially expressed. That alone
-does not allow us to draw any firm conclusions. There are any number of technical and
-biological reasons for this, including:
+You'll notice that we observe only 146 genes that are differentially expressed.
+When this experiment was performed, the scientists involved were surprised that
+the effect was so small and expected more genes to be changed.
 
-1. The knockout of the gene truly has no biological effect.
+That suspicion alone did not allow for any firm conclusions since there are any number
+of technical and biological reasons for this, including:
+
+1. The knockout of the gene truly has a small or no biological effect.
 2. The samples were of poor quality, or the pipeline didn't process them correctly.
 
 As it happens, the researchers in question were fairly confident that the rest
-of the experiment was successful and of high quality, and that there *should*,
-based on their other knowledge and experiments, be a more robust effect
-on gene expression.
+of the experiment was successful and of high quality, and that there *should* be,
+based on their other knowledge and experiments, a more robust effect
+on gene expression (i.e. more genes that are changed between conditions)
 
 **Discuss** with your classmates around you what you suspect might be the issue
 in this dataset. *Hint*: This is hard, and you're doing this with very little
 context, but you technically have all the information you need in the counts matrix
-and coldata.
+and  YOu 
 
 **Q4.1** Write down your best hypothesis, and the evidence from this lab that supports it.
 We'll discuss as a class before moving on to the re-analysis.

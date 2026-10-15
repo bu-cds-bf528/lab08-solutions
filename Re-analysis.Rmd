@@ -21,10 +21,12 @@ By the end of this part you should be able to:
 
 # Background: the reveal
 
-In the first part of the lab, the `~ condition` model found no differentially expressed
-genes between KO and WT. After the experiment, we learned one more piece of information
-that wasn't in the original sample sheet: the 8 mice came from **three different
-litters**.
+In the first part of the lab, the `~ condition` model found very few (subjective)
+differentially expressed genes between KO and WT. After the experiment, the researcher
+learned one more piece of information that wasn't in the original sample sheet: 
+the 8 mice came from **three different litters**. Although this information is
+technically encoded in the numbers (the numbers close together were from the same
+litter as you see below)
 
 | mouse | litter |
 |-------|--------|
@@ -32,9 +34,9 @@ litters**.
 | 857, 858 | L2 |
 | 891, 892 | L3 |
 
-Mice from the same litter share parents, a mother, a cage, and a birth date. That can make
-littermates' gene expression more similar to each other than to mice from other litters,
-regardless of genotype.
+Mice from the same litter share parents, a mother, a cage, and a birth date. That
+can make littermates' gene expression more similar to each other than to mice
+from other litters, regardless of genotype.
 
 A **covariate** is a variable that isn't what you're testing but still affects your
 measurements. If you leave it out of the model, the variation it causes gets counted as
@@ -73,11 +75,27 @@ coldata <- tibble(sample = colnames(counts)[-1]) %>%
   separate(sample, into = c("condition", "mouse"), remove = FALSE) %>%
   mutate(condition = factor(condition, levels = c("WT", "KO")))
 
+
+# We make a new tibble that 
 litter_map <- tibble(
   mouse  = c("840", "841", "842", "843", "857", "858", "891", "892"),
   litter = c(rep("L1", 4), rep("L2", 2), rep("L3", 2))
 )
 
+```
+
+
+We are going to take advantage of columns that hold the same information in each
+table to perform what's known as a `join` operation. Specifically, we are going 
+to use a `left_join` which will keep all entries from the dataframe on the `left`
+even if there is no corresponding match in the `right` dataframe. We are able to
+do this because the common elements (mouse column) match in both dataframes. 
+
+Insert image of join here
+
+Look up the syntax for `left_join` in tidyverse and join the two tables:
+
+```{r}
 # TODO: left_join litter_map onto coldata; make litter a factor
 coldata <- coldata %>%
   left_join(litter_map, by = "mouse") %>%
@@ -86,12 +104,16 @@ coldata
 ```
 
 **Q1.1** Make a table of `condition` by `litter` with `table(coldata$condition, coldata$litter)`.
-Does every litter contain both WT and KO mice? Why does that matter?
+Does every litter contain both WT and KO mice?
+
+```{r}
+table(coldata$condition, coldata$litter)
+```
 
 ## 1.4 Build the DESeq2 object
 
 DESeq2 convention is to put the variable you're testing **last** in the design formula and
-any covariates before it.
+any covariates before it. This will 
 
 ```{r dds-build}
 mat <- counts %>% column_to_rownames("gene_id") %>% as.matrix()
@@ -239,27 +261,4 @@ re-run the plots. Is the pattern the same?
 
 ---
 
-# Part 5: Visualizing with the covariate removed
 
-```{r remove-batch}
-# For VISUALIZATION ONLY (requires the limma package):
-# vsd_cov <- vst(dds_cov, blind = FALSE)
-# assay(vsd_cov) <- limma::removeBatchEffect(assay(vsd_cov), batch = vsd_cov$litter,
-#                                            design = model.matrix(~ condition, colData(vsd_cov)))
-# TODO: plotPCA(vsd_cov, intgroup = "condition")
-```
-
-**Q5.1** What does the PCA look like after removing litter?
-
-**Q5.2** Why should you **never** pass batch-corrected values into `DESeq()`?
-(Hint: what kind of data does DESeq2 model?)
-
----
-
-# Part 6: Reflection
-
-1. In 2–3 sentences, explain to a labmate why including litter changed the results.
-2. List three other covariates that commonly cause this problem in mouse or human
-   RNA-seq experiments (think about sample collection, library prep, and sequencing).
-3. How would you design this experiment from scratch to minimize litter effects?
-4. When can you **not** fix a covariate statistically?
