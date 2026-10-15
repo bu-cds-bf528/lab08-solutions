@@ -1,5 +1,5 @@
 ---
-title: "Lab 3: DESeq2 and covariates"
+title: "Lab 3: Differential expression with DESeq2"
 output:
   html_document:
     toc: true
@@ -17,9 +17,8 @@ By the end of this lab you should be able to:
 
 1. Read, reshape, and plot tabular data in R using the tidyverse.
 2. Build a `DESeqDataSet`, run differential expression, and interpret the results table.
-3. Use exploratory plots (library sizes, PCA, sample distance heatmaps) to spot structure in your samples that you didn't plan for.
-4. Explain what a covariate is, and add one to a DESeq2 design formula.
-5. Compare results with and without a covariate and explain why they differ.
+3. Use exploratory plots (PCA, sample distance heatmaps) to assess the quality and structure of your samples.
+4. Reason about what a "no significant genes" result can and cannot tell you.
 
 # Background
 
@@ -30,8 +29,8 @@ aligned and counted per gene with `verse`. Our question is simple:
 
 Each sample is named `<genotype>_<mouse ID>`, e.g. `KO_840`.
 
-This was a real experiment and the information given was what was originally 
-available. 
+This was a real experiment, and the information given here is what was originally
+available.
 
 ---
 
@@ -39,8 +38,8 @@ available.
 
 You don't need to know any R before this lab. This part covers everything you need for
 Part 1. In later parts you'll write some code yourself, usually by adapting an example
-from earlier in the lab. The goal is to understand what the code does, and if you're 
-already experienced, you can skip it. 
+from earlier in the lab. The goal is to understand what the code does. If you're
+already experienced with R, you can skip this part.
 
 ## 0.1 How this document works
 
@@ -50,7 +49,8 @@ paragraph) with **code chunks**: grey boxes that start with ` ```{r} `.
 - **Run one chunk:** click the green ▶ arrow at the top right of the chunk, or put your
   cursor inside it and press **Ctrl+Shift+Enter** (Mac: **Cmd+Shift+Enter**).
 - **Run one line:** put your cursor on the line and press **Ctrl+Enter** (Mac: **Cmd+Enter**).
-- The output appears directly under the chunks.
+- The output appears directly under the chunk.
+
 > **Run chunks in order.** Many chunks use results from earlier ones. If you see
 > `Error: object 'something' not found`, you probably skipped a chunk above.
 
@@ -62,7 +62,7 @@ Try it: run the chunk below.
 
 ## 0.2 Comments
 
-A '#' is the comment sybol in R
+A `#` is the comment symbol in R.
 
 ```{r comments}
 # This line does nothing
@@ -72,7 +72,7 @@ A '#' is the comment sybol in R
 ## 0.3 Saving results in objects
 
 The arrow `<-` stores a value under a name so you can use it later, exactly the
-same concept as assigning values to variables in other languages. 
+same concept as assigning values to variables in other languages.
 
 ```{r objects}
 x <- 5
@@ -80,7 +80,7 @@ y <- x * 2
 y
 ```
 
-Typing an object's name on its own line prints it. 
+Typing an object's name on its own line prints it.
 
 ## 0.4 Functions
 
@@ -106,33 +106,41 @@ genotypes <- c("WT", "KO", "WT", "KO") # text ("character") values go in quotes
 genotypes
 ```
 
-
 ## 0.6 Packages
 
-A **package** is a bundle of extra functions that someone else wrote. We use three:
+A **package** is a bundle of extra functions that someone else wrote. We use:
 
 - **tidyverse**: reading, reshaping, and plotting tables
 - **DESeq2**: differential expression analysis
-- **pheatmap**: heatmaps
+- **pheatmap** and **RColorBrewer**: heatmaps and color palettes
 
 You **install** a package once per computer, and **load** it with `library()` at the start
-of every session. The install chunk below is set not to run when you knit
-(`eval=FALSE`). Copy its lines into the Console and run them once. This can take several
-minutes. If R asks "Update all/some/none?", type `n` and press Enter.
+of every session. These packages should already be installed in the class environment.
+If `library()` gives you an error, copy the lines from the install chunk below into the
+Console and run them once. The chunk is set not to run when you knit (`eval=FALSE`).
+Installing can take several minutes. If R asks "Update all/some/none?", type `n` and
+press Enter.
 
-Both tidyverse and DESeq2 should already be installed in the environment. 
+```{r install, eval=FALSE}
+# Run ONCE, only if library() below fails
+install.packages(c("tidyverse", "pheatmap", "RColorBrewer", "BiocManager"))
+BiocManager::install("DESeq2")
+```
 
 ```{r libraries}
 # Run every session
 library(tidyverse)
 library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
 ```
 
 ---
 
-Most of the code from this lab comes directly from the [DESeq2 Tutorial](https://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html)
-
 # Part 1: Loading and tidying the counts
+
+Most of the code in this lab comes directly from the
+[DESeq2 tutorial](https://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html).
 
 All the code in this part is provided. Run each chunk, read the comments, and answer the
 questions.
@@ -168,15 +176,13 @@ head(raw$gene_id)
 
 **Q1.1** How many genes are in the table?
 
-
-**Q1.2** How many genes **should** be in the table and how would you know this?
-
+**Q1.2** How many genes **should** be in the table, and how would you know this?
 
 ## 1.2 The pipe: `%>%`
 
 The tidyverse uses the **pipe**, `%>%`, to chain steps together. It takes the result on its
-left and passes it into the function on its right. It is very similar to the idea of a bash '|'
-pipe. 
+left and passes it into the function on its right. It is very similar to the bash `|`
+pipe.
 
 ```{r pipe}
 # These two lines do the same thing:
@@ -254,7 +260,7 @@ Here are the counts for one gene across all 8 samples:
 
 ```{r first-plot}
 counts_long %>%
-  filter(gene_id == "ENSMUSG00000025902.13") %>%          # keep only rows for one gene
+  filter(gene_id == "ENSMUSG00000051951.5") %>%          # keep only rows for one gene
   ggplot(aes(x = sample, y = count, fill = condition)) + # map columns to the plot
   geom_col() +                                           # draw bars
   labs(title = "ENSMUSG00000051951.5", y = "Raw read count")
@@ -262,9 +268,8 @@ counts_long %>%
 
 Note that `==` **tests** whether two things are equal, while `=` and `<-` **assign** values.
 
-**Try it:** copy the chunk above and change the gene ID to `"ENSMUSG00000025902.13"`.
-Then try changing `geom_col()` to `geom_point(size = 3)`.
-
+**Try it:** copy the chunk above and change the gene ID (in both places) to
+`"ENSMUSG00000025902.13"`. Then try changing `geom_col()` to `geom_point(size = 3)`.
 
 ## 1.6 The sample table
 
@@ -290,17 +295,9 @@ would happen to the sign (+/−) of the fold changes?
 
 # Part 2: Quality control and exploration
 
-## 2.1 Filter low-count genes
-
-```{r filter}
-# TODO: keep genes with >= 10 counts in at least 4 samples
-# How many genes are left?
-```
-
-## 2.2 Build the DESeq2 object
+## 2.1 Build the DESeq2 object
 
 ```{r dds-first}
-
 # Need to convert the counts to a matrix
 mat <- counts %>% column_to_rownames("gene_id") %>% as.matrix()
 
@@ -308,9 +305,25 @@ mat <- counts %>% column_to_rownames("gene_id") %>% as.matrix()
 dds <- DESeqDataSetFromMatrix(countData = mat,
                               colData   = coldata,
                               design    = ~ condition)
+dds
 ```
 
-## 2.4 PCA and sample distances
+## 2.2 Filter low-count genes
+
+Genes with almost no reads carry no information and only add to the multiple-testing
+burden. `counts(dds)` returns the count matrix stored inside `dds`.
+
+```{r filter}
+# TODO: keep genes with >= 10 counts in at least 4 samples
+# How many genes are left?
+keep <- rowSums(counts(dds) >= 10) >= 4
+dds <- dds[keep, ]
+nrow(dds)
+```
+
+**Q2.1** How many genes did you remove?
+
+## 2.3 PCA and sample distances
 
 ```{r vst-pca}
 vsd <- vst(dds, blind = TRUE)
@@ -320,19 +333,18 @@ plotPCA(vsd, intgroup = "condition")
 
 ```{r dist-heatmap}
 sampleDists <- dist(t(assay(vsd)))
-library("RColorBrewer")
-library("pheatmap")
 sampleDistMatrix <- as.matrix(sampleDists)
-rownames(sampleDistMatrix) <- paste(vsd$mouse, vsd$type, sep="-")
+rownames(sampleDistMatrix) <- vsd$sample
 colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
-         clustering_distance_rows=sampleDists,
-         clustering_distance_cols=sampleDists,
-         col=colors)
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
 ```
 
 **Q2.2** What does PC1 separate? Does it match genotype?
+
 **Q2.3** In the heatmap, which samples are most similar to each other? Write down your
 hypothesis for what is driving this structure.
 
@@ -344,40 +356,42 @@ hypothesis for what is driving this structure.
 # This runs the DESeq2 method - normalization, testing of each gene with a GLM
 dds <- DESeq(dds)
 
-# This makes the results available in a dataframe
-res_basic <- results(dds, name = "condition_KO_vs_WT")
+# This makes the results available in a data frame
+res_naive <- results(dds, name = "condition_KO_vs_WT")
 ```
 
 ```{r naive-tibble}
-# TODO: convert to tibble (rownames_to_column), arrange by padj
-res_tbl <- res_basic %>% as_tibble(rownames='gene_id') %>% arrange(padj)
+# TODO: convert to tibble, arrange by padj
+res_tbl <- res_naive %>% as_tibble(rownames = "gene_id") %>% arrange(padj)
 res_tbl
 ```
 
-How many results are significant at .1? Use the filter function.
-```{r}
+**Q3.1** How many genes are significant at `padj < 0.1`? Use the `filter()` function.
 
-res_tbl %>% filter(padj < .1)
-
+```{r naive-sig}
+res_tbl %>% filter(padj < 0.1)
 ```
+
 ---
 
-# Part 4: Finding what was potentially wrong
+# Part 4: What might have gone wrong?
 
 You'll notice that we observe no genes that are differentially expressed. That alone
-does not allow us to draw any firm conclusions. There are any number of both 
-technical and biological reasons for this, including: 1. The knockout of the gene
-truly has no biological effect, or 2. The samples were of poor quality / The pipeline
-didn't process them correctly. 
+does not allow us to draw any firm conclusions. There are any number of technical and
+biological reasons for this, including:
+
+1. The knockout of the gene truly has no biological effect.
+2. The samples were of poor quality, or the pipeline didn't process them correctly.
 
 As it happens, the researchers in question were fairly confident that the rest
-of the experiment was successful and of high quality and that there *should*,
-based on their other knowledge and experiments, be some relatively robust effect
-on gene expression. 
+of the experiment was successful and of high quality, and that there *should*,
+based on their other knowledge and experiments, be a more robust effect
+on gene expression.
 
 **Discuss** with your classmates around you what you suspect might be the issue
-in this dataset. *Hint*: This is hard and you're doing this with very little
-context but you technically have all the information you need in the counts matrix
-and coldata. 
+in this dataset. *Hint*: This is hard, and you're doing this with very little
+context, but you technically have all the information you need in the counts matrix
+and coldata.
 
-
+**Q4.1** Write down your best hypothesis, and the evidence from this lab that supports it.
+We'll discuss as a class before moving on to the re-analysis.

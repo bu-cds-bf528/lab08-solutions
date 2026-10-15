@@ -1,10 +1,5 @@
 ---
-title: "Re-analysis"
-output: html_document
----
-
----
-title: "Lab 3: DESeq2 and covariates"
+title: "Lab 3 (Part 2): Re-analysis with a covariate"
 output:
   html_document:
     toc: true
@@ -18,120 +13,18 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 # Learning objectives
 
-By the end of this lab you should be able to:
+By the end of this part you should be able to:
 
-1. Read, reshape, and plot tabular data in R using the tidyverse.
-2. Build a `DESeqDataSet`, run differential expression, and interpret the results table.
-3. Use exploratory plots (library sizes, PCA, sample distance heatmaps) to spot structure in your samples that you didn't plan for.
-4. Explain what a covariate is, and add one to a DESeq2 design formula.
-5. Compare results with and without a covariate and explain why they differ.
+1. Explain what a covariate is, and add one to a DESeq2 design formula.
+2. Use exploratory plots to check whether a covariate explains structure in your samples.
+3. Compare results with and without a covariate and explain why they differ.
 
-# Background
+# Background: the reveal
 
-We have bulk RNA-seq from **8 mice**: 4 wild-type (WT) and 4 knockout (KO). Reads were
-aligned and counted per gene with `verse`. Our question is simple:
-
-> **Which genes are differentially expressed between KO and WT?**
-
-Each sample is named `<genotype>_<mouse ID>`, e.g. `KO_840`.
-
-This was a real experiment and the information given was what was originally 
-available. 
-
----
-
-## Packages 
-
-A **package** is a bundle of extra functions that someone else wrote. We use three:
-
-- **tidyverse**: reading, reshaping, and plotting tables
-- **DESeq2**: differential expression analysis
-- **pheatmap**: heatmaps
-
-You **install** a package once per computer, and **load** it with `library()` at the start
-of every session. The install chunk below is set not to run when you knit
-(`eval=FALSE`). Copy its lines into the Console and run them once. This can take several
-minutes. If R asks "Update all/some/none?", type `n` and press Enter.
-
-Both tidyverse and DESeq2 should already be installed in the environment. 
-
-```{r libraries}
-# Run every session
-library(tidyverse)
-library(DESeq2)
-```
-
----
-
-Most of the code from this lab comes directly from the [DESeq2 Tutorial](https://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html)
-
-
-
-## Read the counts into R
-
-The counts are in a **tab-separated** text file, which is a spreadsheet saved as plain text.
-`read_tsv()` reads it into a table. In R, a table is called a **data frame**. The tidyverse
-version of a data frame is called a **tibble**.
-
-```{r read-raw}
-# The file must be in the same folder as this .Rmd
-raw <- read_tsv("all_verse_counts.tsv")
-```
-
-
-## Clean up the table
-
-There are two problems to fix:
-
-1. The first column is a leftover row number from the program that wrote the file. It
-   isn't data.
-2. Every sample name ends in `_count`, which is not needed for further analysis.
-
-```{r clean}
-counts <- raw %>%
-  select(-1) %>%                                   # drop column number 1
-  rename_with(~ str_remove(.x, "_count"))          # remove "_count" from every column name
-
-head(counts)
-```
-
-- `select()` chooses columns. A minus sign means "everything **except**".
-- `rename_with()` applies the same renaming rule to every column name. Here the rule is
-  `str_remove(.x, "_count")`, where `.x` stands for "each name".
-
-## The sample table (colData)
-
-DESeq2 needs a second table that describes each sample. It's called **colData** because it
-describes the *columns* of the count matrix. We build it from the sample names.
-
-```{r coldata}
-coldata <- tibble(sample = colnames(counts)[-1]) %>%   # all column names except gene_id
-  separate(sample, into = c("condition", "mouse"), remove = FALSE) %>%
-  mutate(condition = factor(condition, levels = c("WT", "KO")))
-coldata
-```
-
-- `[-1]` means "everything except the first item".
-- `mutate()` creates or changes a column.
-- `factor()` tells R that `condition` is a category with a fixed set of levels. The **first
-  level is the reference**, which is the group everything else is compared against.
-
-
----
-
-## Finding what was potentially wrong
-
-You'll notice that we observe no genes that are differentially expressed. That alone
-does not allow us to draw any firm conclusions. There are any number of both 
-technical and biological reasons for this, including: 1. The knockout of the gene
-truly has no biological effect, or 2. The samples were of poor quality / The pipeline
-didn't process them correctly. 
-
-As it happens, the researchers in question were fairly confident that the rest
-of the experiment was successful and of high quality and that there *should*,
-based on their other knowledge and experiments, be some relatively robust effect
-on gene expression. 
-
+In the first part of the lab, the `~ condition` model found no differentially expressed
+genes between KO and WT. After the experiment, we learned one more piece of information
+that wasn't in the original sample sheet: the 8 mice came from **three different
+litters**.
 
 | mouse | litter |
 |-------|--------|
@@ -139,99 +32,148 @@ on gene expression.
 | 857, 858 | L2 |
 | 891, 892 | L3 |
 
-```{r litter}
+Mice from the same litter share parents, a mother, a cage, and a birth date. That can make
+littermates' gene expression more similar to each other than to mice from other litters,
+regardless of genotype.
+
+A **covariate** is a variable that isn't what you're testing but still affects your
+measurements. If you leave it out of the model, the variation it causes gets counted as
+noise, and the real effect you care about can get lost in that noise.
+
+**Q0.1** Look back at the mouse IDs in your PCA and heatmap from the first part. Does
+litter match the structure you saw?
+
+---
+
+# Part 1: Set up the data
+
+## 1.1 Packages
+
+```{r libraries}
+library(tidyverse)
+library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
+```
+
+## 1.2 Read and clean the counts
+
+This is the same code as the first part of the lab.
+
+```{r read-clean}
+counts <- read_tsv("all_verse_counts.tsv") %>%
+  select(-1) %>%                                   # drop the leftover row-number column
+  rename_with(~ str_remove(.x, "_count"))          # remove "_count" from every column name
+```
+
+## 1.3 Add litter to the sample table
+
+```{r coldata}
+coldata <- tibble(sample = colnames(counts)[-1]) %>%
+  separate(sample, into = c("condition", "mouse"), remove = FALSE) %>%
+  mutate(condition = factor(condition, levels = c("WT", "KO")))
+
 litter_map <- tibble(
   mouse  = c("840", "841", "842", "843", "857", "858", "891", "892"),
   litter = c(rep("L1", 4), rep("L2", 2), rep("L3", 2))
 )
-# TODO: left_join litter_map onto coldata; make litter a factor
 
-coldata <- coldata %>% left_join(litter_map, by="mouse")
+# TODO: left_join litter_map onto coldata; make litter a factor
+coldata <- coldata %>%
+  left_join(litter_map, by = "mouse") %>%
+  mutate(litter = factor(litter))
+coldata
 ```
 
-##  Build the DESeq2 object
+**Q1.1** Make a table of `condition` by `litter` with `table(coldata$condition, coldata$litter)`.
+Does every litter contain both WT and KO mice? Why does that matter?
 
-```{r dds-first}
+## 1.4 Build the DESeq2 object
 
-# Need to convert the counts to a matrix
+DESeq2 convention is to put the variable you're testing **last** in the design formula and
+any covariates before it.
+
+```{r dds-build}
 mat <- counts %>% column_to_rownames("gene_id") %>% as.matrix()
 
-# Constructs the DESeq2 object that bundles the counts, coldata, and design formula together
-dds <- DESeqDataSetFromMatrix(countData = mat,
-                              colData   = coldata,
-                              design    = ~ condition + litter)
+dds_cov <- DESeqDataSetFromMatrix(countData = mat,
+                                  colData   = coldata,
+                                  design    = ~ litter + condition)
+
+# Same filter as the first part of the lab
+keep <- rowSums(counts(dds_cov) >= 10) >= 4
+dds_cov <- dds_cov[keep, ]
 ```
 
-## 2.4 PCA and sample distances
+---
+
+# Part 2: Does litter explain the structure?
 
 ```{r vst-pca}
-vsd <- vst(dds, blind = TRUE)
-# TODO: plotPCA(vsd, intgroup = "condition")
-plotPCA(vsd, intgroup = c("litter"))
+vsd <- vst(dds_cov, blind = TRUE)
+
+pca_df <- plotPCA(vsd, intgroup = c("condition", "litter"), returnData = TRUE)
+percentVar <- round(100 * attr(pca_df, "percentVar"))
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = litter, shape = condition)) +
+  geom_point(size = 3) +
+  labs(x = paste0("PC1: ", percentVar[1], "% variance"),
+       y = paste0("PC2: ", percentVar[2], "% variance"))
 ```
 
 ```{r dist-heatmap}
 sampleDists <- dist(t(assay(vsd)))
-library("RColorBrewer")
-library("pheatmap")
 sampleDistMatrix <- as.matrix(sampleDists)
-rownames(sampleDistMatrix) <- paste(vsd$mouse, vsd$litter, sep="-")
-colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+anno <- as.data.frame(colData(vsd)[, c("condition", "litter")])
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
-         clustering_distance_rows=sampleDists,
-         clustering_distance_cols=sampleDists,
-         col=colors)
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         annotation_row = anno,
+         show_colnames = FALSE,
+         col = colors)
 ```
 
+**Q2.1** What does PC1 separate now that the points are colored by litter?
+
+**Q2.2** In the heatmap, do samples cluster by litter or by genotype?
 
 ---
 
-# The revisited analysis (`~ condition + litter`)
+# Part 3: Comparing the two models
 
-```{r deseq-naive}
-# This runs the DESeq2 method - normalization, testing of each gene with a GLM
-dds <- DESeq(dds)
+We fit both models on the same filtered data so the comparison is fair.
 
-# This makes the results available in a dataframe
-res_basic <- results(dds, name = "condition_KO_vs_WT")
+```{r deseq-both}
+# The original model: ~ condition
+dds_naive <- dds_cov
+design(dds_naive) <- ~ condition
+dds_naive <- DESeq(dds_naive)
+res_naive <- results(dds_naive, name = "condition_KO_vs_WT")
+
+# The revisited model: ~ litter + condition
+dds_cov <- DESeq(dds_cov)
+res_cov <- results(dds_cov, name = "condition_KO_vs_WT")
 ```
 
-```{r naive-tibble}
-# TODO: convert to tibble (rownames_to_column), arrange by padj
-res_tbl <- res_basic %>% as_tibble(rownames='gene_id') %>% arrange(padj)
+```{r cov-tibble}
+# TODO: convert res_cov to a tibble, arrange by padj
+res_tbl <- res_cov %>% as_tibble(rownames = "gene_id") %>% arrange(padj)
 res_tbl
 ```
 
----
+**Q3.1** How many genes are significant at `padj < 0.1` in each model?
 
-How many results are significant at .1? Use the filter function.
-```{r}
-res_tbl %>% filter(padj < .1)
-
+```{r sig-counts}
+sum(res_naive$padj < 0.1, na.rm = TRUE)
+sum(res_cov$padj < 0.1, na.rm = TRUE)
 ```
-
-
-## Within-litter trends
-
-```{r paired-plot}
-# TODO: pick a few genes (e.g. top hits from Part 5 later).
-#       Plot normalized counts with x = condition, color = litter,
-#       and geom_line(aes(group = litter)) connecting the litter means.
-```
-
-
 
 ---
 
+# Part 4: Genes gained by adding the covariate
 
-
-
-
-## 5.2 Genes gained by adding the covariate
-
-The code for this section is provided. It needs `res_naive` (Part 3) and `dds_cov` /
-`res_cov` (Part 5) to exist. Read through it and run each chunk.
+The code for this section is provided. Read through it and run each chunk.
 
 ```{r gained-find}
 # Significant genes (padj < 0.1) from each model
@@ -289,37 +231,35 @@ ggplot(plot_df, aes(x = condition, y = norm_count, color = litter)) +
        x = NULL, y = "Normalized counts")
 ```
 
-**Q5.4** In View 1, do WT and KO look different? In View 2, what do the lines for
+**Q4.1** In View 1, do WT and KO look different? In View 2, what do the lines for
 each litter have in common? Why could the naive model not detect this gene?
 
-**Q5.5** Change `gene_of_interest` to two or three other genes from `gained` and
+**Q4.2** Change `gene_of_interest` to two or three other genes from `gained` and
 re-run the plots. Is the pattern the same?
 
+---
 
-
-# Part 6: Visualizing with the covariate removed
+# Part 5: Visualizing with the covariate removed
 
 ```{r remove-batch}
-# For VISUALIZATION ONLY:
+# For VISUALIZATION ONLY (requires the limma package):
 # vsd_cov <- vst(dds_cov, blind = FALSE)
 # assay(vsd_cov) <- limma::removeBatchEffect(assay(vsd_cov), batch = vsd_cov$litter,
 #                                            design = model.matrix(~ condition, colData(vsd_cov)))
 # TODO: plotPCA(vsd_cov, intgroup = "condition")
 ```
 
-**Q6.1** What does PCA look like after removing litter?
-**Q6.2** Why should you **never** pass batch-corrected values into `DESeq()`?
+**Q5.1** What does the PCA look like after removing litter?
+
+**Q5.2** Why should you **never** pass batch-corrected values into `DESeq()`?
 (Hint: what kind of data does DESeq2 model?)
 
 ---
 
-# Part 7: Reflection
+# Part 6: Reflection
 
 1. In 2–3 sentences, explain to a labmate why including litter changed the results.
 2. List three other covariates that commonly cause this problem in mouse or human
    RNA-seq experiments (think about sample collection, library prep, and sequencing).
 3. How would you design this experiment from scratch to minimize litter effects?
 4. When can you **not** fix a covariate statistically?
-
----
-
