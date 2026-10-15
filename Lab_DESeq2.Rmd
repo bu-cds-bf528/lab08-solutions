@@ -135,6 +135,80 @@ library(pheatmap)
 library(RColorBrewer)
 ```
 
+## 0.7 Working with tables in the tidyverse
+
+Most of the table work in this lab uses a handful of tidyverse functions. To practice,
+here is a small made-up table. `tibble()` builds a table one column at a time.
+
+```{r toy-table}
+genes <- tibble(
+  gene   = c("Actb", "Gapdh", "Sox2", "Pax6", "Alb", "Ttr"),
+  tissue = c("brain", "brain", "brain", "brain", "liver", "liver"),
+  count  = c(1500, 2200, 340, 15, 5000, 4100),
+  length = c(1.9, 1.4, 2.5, 3.2, 2.1, 0.8)   # kilobases
+)
+genes
+```
+
+**The pipe, `%>%`**, passes the table on its left into the function on its right. Read it
+as "and then". It works much like the bash `|` pipe. Every function below takes a table and
+returns a new table, so they can be chained together with pipes.
+
+`select()` keeps **columns**:
+
+```{r toy-select}
+genes %>% select(gene, count)      # keep only these columns
+genes %>% select(-length)          # keep everything except length
+```
+
+`filter()` keeps **rows** that meet a condition:
+
+```{r toy-filter}
+genes %>% filter(count > 1000)                       # one condition
+genes %>% filter(tissue == "brain", count > 100)     # both conditions must be true
+genes %>% filter(gene %in% c("Sox2", "Alb"))         # gene is one of these
+```
+
+`mutate()` adds a new column, or changes an existing one:
+
+```{r toy-mutate}
+genes %>% mutate(count_per_kb = count / length)
+```
+
+`arrange()` sorts rows. Wrap the column in `desc()` for largest first:
+
+```{r toy-arrange}
+genes %>% arrange(desc(count))
+```
+
+`group_by()` + `summarize()` compute a summary for each group:
+
+```{r toy-summarize}
+genes %>%
+  group_by(tissue) %>%
+  summarize(n_genes = n(), mean_count = mean(count))
+```
+
+Chain several steps together, and save the result with `<-`:
+
+```{r toy-chain}
+brain_top <- genes %>%
+  filter(tissue == "brain") %>%                  # brain genes only
+  mutate(count_per_kb = count / length) %>%      # add a column
+  arrange(desc(count_per_kb)) %>%                # sort, largest first
+  select(gene, count_per_kb)                     # keep two columns
+brain_top
+```
+
+None of these functions change `genes` itself. Print `genes` again and you'll see it is
+unchanged. To keep a result, assign it to a name, as with `brain_top` above.
+
+**Try it:** write a pipe that keeps only liver genes with `count` above 4500.
+
+```{r toy-try}
+# TODO: your code here
+```
+
 ---
 
 # Part 1: Loading and tidying the counts
@@ -180,9 +254,8 @@ head(raw$gene_id)
 
 ## 1.2 The pipe: `%>%`
 
-The tidyverse uses the **pipe**, `%>%`, to chain steps together. It takes the result on its
-left and passes it into the function on its right. It is very similar to the bash `|`
-pipe.
+You met the pipe, `%>%`, in section 0.7. It works with any function, not only the tidyverse
+ones, and here it is on the real data.
 
 ```{r pipe}
 # These two lines do the same thing:
